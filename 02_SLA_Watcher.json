@@ -1,0 +1,258 @@
+{
+  "name": "02. SLA Watcher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes" }]
+        }
+      },
+      "id": "701016a4-ab5e-4b7b-8233-8e1a7f3335dc",
+      "name": "SLA Watcher (every 5m)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1472, 832],
+      "notes": "Fires every 5 min. Working hours guard stops it outside 09:00-22:00."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            {
+              "id": "47769224-aafe-4c03-b207-a88884d1b0d9",
+              "leftValue": "={{ $now.hour >= 9 && $now.hour < 22 }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ecf7edc2-03ea-4bff-83f3-0d4dfcbbbdca",
+      "name": "If (working hours guard)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-1248, 832],
+      "notes": "HUSH shift: 09:00-22:00. No SLA checks outside working hours."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEETS_DOC_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "filtersUI": {
+          "values": [{ "lookupColumn": "status", "lookupValue": "open" }]
+        },
+        "options": {}
+      },
+      "id": "8d7a93df-477e-4745-8f94-b269230faa51",
+      "name": "Read Open Tickets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [-1024, 832],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "notes": "Reads only rows where status = open. Closed tickets are invisible to the watcher."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+          "conditions": [
+            {
+              "id": "cond-sla-breached",
+              "leftValue": "={{ DateTime.fromISO($json.sla_deadline) < $now }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "09e6a77b-b974-4204-ae42-36c5d011b933",
+      "name": "SLA Breached?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-800, 832],
+      "notes": "deadline < now AND status is open = breach."
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "minutes_overdue",
+              "type": "numberValue",
+              "numberValue": "={{ Math.round(($now.toMillis() - new Date($json.sla_deadline).getTime()) / 60000) }}"
+            },
+            {
+              "name": "escalation_level",
+              "type": "numberValue",
+              "numberValue": "={{ Math.round(($now.toMillis() - new Date($json.sla_deadline).getTime()) / 60000) >= 60 ? 2 : Math.round(($now.toMillis() - new Date($json.sla_deadline).getTime()) / 60000) >= 30 ? 1 : 0 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b036bc8e-bcbf-43d3-b427-26f0db902029",
+      "name": "Compute Escalation Level",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [-576, 832],
+      "notes": "Level 0: 0-30 min overdue -> Slack DM owner. Level 1: 30-60 min -> #cx-escalations channel. Level 2: 60+ min -> email owner."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+                "conditions": [{ "id": "lvl0", "leftValue": "={{ $json.escalation_level }}", "rightValue": 0, "operator": { "type": "number", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Level 0 - Owner"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+                "conditions": [{ "id": "lvl1", "leftValue": "={{ $json.escalation_level }}", "rightValue": 1, "operator": { "type": "number", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Level 1 - TL"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+                "conditions": [{ "id": "lvl2", "leftValue": "={{ $json.escalation_level }}", "rightValue": 2, "operator": { "type": "number", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Level 2 - Owner email"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a7516989-1424-4271-abff-98eb73822ae8",
+      "name": "Switch by Level",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-352, 816],
+      "notes": "3 outputs: Owner DM / Team channel / Owner email."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_OWNER_SLACK_MEMBER_ID",
+          "mode": "id"
+        },
+        "text": "=:warning: *SLA breached - reminder*\n\n*Ticket {{ $json.priority }} overdue by {{ $json.minutes_overdue }} min*\n*Owner:* {{ $json.owner }}\n*Category:* {{ $json.category }}\n\n*Subject:* {{ $json.subject }}\n*Summary:* {{ $json.summary }}\n\n<{{ $json.thread_link }}|Take this ticket>",
+        "otherOptions": {}
+      },
+      "id": "8b19a27f-78f4-48d8-9f60-14acba0e4858",
+      "name": "Slack: Remind Owner (L0)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [-128, 640],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "notes": "L0 - soft reminder. Direct message to owner. Use Slack Member ID (U0XXXXXXX), not channel ID."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_CX_ESCALATIONS_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "=:rotating_light: *Escalation L1 - #cx-escalations*\n\n*Ticket {{ $json.priority }} overdue by {{ $json.minutes_overdue }} min.* Owner {{ $json.owner }} did not respond to reminder.\n\n*Subject:* {{ $json.subject }}\n*Category:* {{ $json.category }}\n*Sentiment:* {{ $json.sentiment }}\n*Summary:* {{ $json.summary }}\n*AI Reasoning:* {{ $json.reasoning }}\n\n<{{ $json.thread_link }}|Help or reassign>",
+        "otherOptions": {}
+      },
+      "id": "72b06595-8a7e-4a13-9516-0194153cbddc",
+      "name": "Slack: Notify TL (L1)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [-128, 832],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "notes": "L1 - whole team sees it in #cx-escalations. Owner or any available operator can pick it up."
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_OWNER_EMAIL",
+        "subject": "=[ESCALATION L2] {{ $json.priority }} ticket overdue {{ $json.minutes_overdue }} min - {{ $json.subject }}",
+        "message": "=<h2>Escalation L2 - Immediate attention required</h2>\n<p>Ticket <strong>{{ $json.priority }}</strong> is overdue by <strong>{{ $json.minutes_overdue }} min</strong>. Operator and team channel have not resolved.</p>\n<h3>Ticket details</h3>\n<ul>\n<li><strong>Category:</strong> {{ $json.category }}</li>\n<li><strong>Sentiment:</strong> {{ $json.sentiment }}</li>\n<li><strong>From:</strong> {{ $json.from_email }}</li>\n<li><strong>Created:</strong> {{ $json.created_at }}</li>\n<li><strong>SLA deadline:</strong> {{ $json.sla_deadline }}</li>\n</ul>\n<h3>Summary</h3>\n<p>{{ $json.summary }}</p>\n<h3>AI Reasoning</h3>\n<p><em>{{ $json.reasoning }}</em></p>\n<p><a href=\"{{ $json.thread_link }}\">Open Gmail thread</a></p>",
+        "options": { "appendAttribution": false }
+      },
+      "id": "3735e294-2e27-4a48-a82a-006bc4c1dc9f",
+      "name": "Email: Owner (L2)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-128, 1024],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "L2 - email to owner with full context. Not a ping - information for a management decision."
+    }
+  ],
+  "connections": {
+    "SLA Watcher (every 5m)": {
+      "main": [[{ "node": "If (working hours guard)", "type": "main", "index": 0 }]]
+    },
+    "If (working hours guard)": {
+      "main": [[{ "node": "Read Open Tickets", "type": "main", "index": 0 }]]
+    },
+    "Read Open Tickets": {
+      "main": [[{ "node": "SLA Breached?", "type": "main", "index": 0 }]]
+    },
+    "SLA Breached?": {
+      "main": [[{ "node": "Compute Escalation Level", "type": "main", "index": 0 }]]
+    },
+    "Compute Escalation Level": {
+      "main": [[{ "node": "Switch by Level", "type": "main", "index": 0 }]]
+    },
+    "Switch by Level": {
+      "main": [
+        [{ "node": "Slack: Remind Owner (L0)", "type": "main", "index": 0 }],
+        [{ "node": "Slack: Notify TL (L1)", "type": "main", "index": 0 }],
+        [{ "node": "Email: Owner (L2)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "YOUR_N8N_INSTANCE_ID" },
+  "tags": []
+}

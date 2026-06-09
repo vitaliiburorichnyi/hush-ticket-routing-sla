@@ -1,0 +1,257 @@
+{
+  "name": "01. Ticket Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "is:unread newer_than:1d"
+        },
+        "options": {}
+      },
+      "id": "70ba8b5a-e716-46b8-b214-3f8c943d3a0c",
+      "name": "Gmail Trigger (every 1m)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [-1536, 592],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            { "name": "ticket_id", "stringValue": "={{ $json.id }}" },
+            { "name": "from_email", "stringValue": "={{ $json.from.value[0].address }}" },
+            { "name": "subject", "stringValue": "={{ $json.subject }}" },
+            { "name": "body", "stringValue": "={{ $json.text || $json.snippet }}" },
+            { "name": "created_at", "stringValue": "={{ $now.toISO() }}" },
+            { "name": "thread_link", "stringValue": "=https://mail.google.com/mail/u/0/#inbox/{{ $json.threadId }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7ade8f89-b2fb-4c1f-b475-7ba5aa04cfa3",
+      "name": "Collect Ticket Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [-1312, 592],
+      "notes": "Collects incoming email into a flat ticket object: id, from, subject, body, timestamp, thread link."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer ticket:\n\nFrom: {{ $json.from_email }}\nSubject: {{ $json.subject }}\nBody:\n{{ $json.body }}",
+        "options": {
+          "systemMessage": "You are a senior customer support coordinator for HUSH — a B2C premium bag e-commerce store.\nYour task: classify the incoming ticket and assign a priority.\n\nCATEGORIES:\n- product-info: questions about size, material, availability, styling — client is deciding to buy RIGHT NOW\n- payment-billing: failed payment, double charge, blocked money, refund request, invoice\n- complaint-legal: legal threat, damaged item, aggressive complaint demanding compensation\n- order-shipping-returns: where is my package, return request, exchange, delivery delay\n- influencer: gifting request, collab proposal, PR partnership\n- spam: advertising, non-client contact, irrelevant\n\nPRIORITIES:\n- P1 (10 min): product-info or payment-billing — sale or money at risk RIGHT NOW\n- P2 (30 min): complaint-legal — reputation or relationship at risk\n- P3 (120 min): order-shipping-returns — post-sale follow-up, less time-critical\n- P4 (1440 min): influencer, other — owner reviews at convenient time\n\nOWNERS:\n- product-info → hush_operator\n- payment-billing → hush_operator\n- complaint-legal → hush_owner\n- order-shipping-returns → hush_operator\n- influencer → hush_owner\n- spam → null\n\nSPECIAL RULES:\n- If message body contains words like 'court', 'lawyer', 'press', 'attorney' → always complaint-legal, P2\n- If message is a gifting/collab/PR request → always influencer, P4, never P1\n- If client explicitly asks to speak with a human → set requires_human: true\n- Detect language from message body (not sender name) — note it in summary\n\nCHAIN OF THOUGHT — analyze these 3 dimensions BEFORE assigning priority:\n1. Urgency: signs of time pressure, money loss, emotional escalation\n2. Business impact: money, retention, reputation at stake\n3. Context: VIP signals (high value, repeat client, legal implications)\n\nRETURN JSON only (no markdown wrapper):\n{\n  \"category\": \"product-info|payment-billing|complaint-legal|order-shipping-returns|influencer|spam\",\n  \"priority\": \"P1|P2|P3|P4\",\n  \"owner\": \"hush_operator|hush_owner|null\",\n  \"sla_minutes\": 10|30|120|1440,\n  \"requires_human\": true|false,\n  \"reasoning\": \"3 sentences explaining priority based on the 3 dimensions above\",\n  \"summary\": \"1 sentence describing what this ticket is about\",\n  \"customer_sentiment\": \"positive|neutral|frustrated|angry\"\n}"
+        }
+      },
+      "id": "f8ecda5b-c01b-48d5-b9d5-717d5e19aad9",
+      "name": "AI Classifier (Chain of Thought)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [-1088, 592],
+      "notes": "HUSH classifier. 5-block prompt: role, context, categories+priorities, Chain of Thought, JSON output format."
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "0e476ea1-3296-4313-9a9e-270cebb2ba3d",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [-1008, 816],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.output;\nconst parsed = JSON.parse(raw);\nreturn [{ json: { output: parsed } }];;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-736, 592],
+      "id": "5df874af-b209-4e6a-8a67-1c70432a93de",
+      "name": "Parse AI Output",
+      "notes": "Agent node returns AI output as plain string. This node parses it into an object so Flatten Result can access fields via $json.output.category etc."
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            { "name": "ticket_id", "stringValue": "={{ $('Collect Ticket Context').item.json.ticket_id }}" },
+            { "name": "from_email", "stringValue": "={{ $('Collect Ticket Context').item.json.from_email }}" },
+            { "name": "subject", "stringValue": "={{ $('Collect Ticket Context').item.json.subject }}" },
+            { "name": "category", "stringValue": "={{ $json.output.category }}" },
+            { "name": "priority", "stringValue": "={{ $json.output.priority }}" },
+            { "name": "owner", "stringValue": "={{ $json.output.owner }}" },
+            { "name": "sla_minutes", "type": "numberValue", "numberValue": "={{ $json.output.sla_minutes }}" },
+            {
+              "name": "sla_deadline",
+              "stringValue": "={{ (() => { const t = DateTime.fromISO($('Collect Ticket Context').item.json.created_at); const mins = $json.output.sla_minutes; const h = t.hour; const start = (h < 9) ? t.set({hour:9,minute:0,second:0,millisecond:0}) : (h >= 22) ? t.plus({days:1}).set({hour:9,minute:0,second:0,millisecond:0}) : t; return start.plus({minutes: mins}).toISO(); })() }}"
+            },
+            { "name": "reasoning", "stringValue": "={{ $json.output.reasoning }}" },
+            { "name": "summary", "stringValue": "={{ $json.output.summary }}" },
+            { "name": "sentiment", "stringValue": "={{ $json.output.customer_sentiment }}" },
+            { "name": "requires_human", "type": "booleanValue" },
+            { "name": "created_at", "stringValue": "={{ $('Collect Ticket Context').item.json.created_at }}" },
+            { "name": "thread_link", "stringValue": "={{ $('Collect Ticket Context').item.json.thread_link }}" },
+            { "name": "status", "stringValue": "open" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fe0edb9a-e632-4275-97e0-9faa1926d4b4",
+      "name": "Flatten Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [-512, 592],
+      "notes": "Merges ticket context + AI output into one flat object. sla_deadline uses working hours logic: tickets outside 09:00-22:00 start countdown from next 09:00."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+          "conditions": [
+            {
+              "id": "cond-not-spam",
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "spam",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f7cef81e-81a5-49de-a522-d591491263d0",
+      "name": "Not spam?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-288, 592],
+      "notes": "Spam does not get logged or notified. Saves budget and keeps Sheets clean."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEETS_DOC_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $json.ticket_id }}",
+            "created_at": "={{ $json.created_at }}",
+            "from_email": "={{ $json.from_email }}",
+            "subject": "={{ $json.subject }}",
+            "category": "={{ $json.category }}",
+            "priority": "={{ $json.priority }}",
+            "owner": "={{ $json.owner }}",
+            "sla_minutes": "={{ $json.sla_minutes }}",
+            "sla_deadline": "={{ $json.sla_deadline }}",
+            "status": "={{ $json.status }}",
+            "summary": "={{ $json.summary }}",
+            "reasoning": "={{ $json.reasoning }}",
+            "sentiment": "={{ $json.sentiment }}",
+            "requires_human": "={{ $json.requires_human }}",
+            "thread_link": "={{ $json.thread_link }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "c244726d-a3c8-4449-9df9-451fc4a43003",
+      "name": "Log -> Tickets Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [-64, 496],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_CX_TICKETS_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "=:rotating_light: *New ticket - {{ $json.priority }}*\n\n*Owner:* {{ $json.owner }}\n*Category:* {{ $json.category }}\n*SLA:* {{ $json.sla_minutes }} min (deadline: {{ $json.sla_deadline }})\n*Sentiment:* {{ $json.sentiment }}\n*Requires human:* {{ $json.requires_human }}\n\n*Subject:* {{ $json.subject }}\n*From:* {{ $json.from_email }}\n\n*Summary:* {{ $json.summary }}\n\n*Why this priority:*\n_{{ $json.reasoning }}_\n\n<{{ $json.thread_link }}|Open thread>",
+        "otherOptions": {}
+      },
+      "id": "8fc8c560-e15e-47cc-8d7f-07d9753d0d1a",
+      "name": "Slack: Notify Owner",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [-64, 688],
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger (every 1m)": {
+      "main": [[{ "node": "Collect Ticket Context", "type": "main", "index": 0 }]]
+    },
+    "Collect Ticket Context": {
+      "main": [[{ "node": "AI Classifier (Chain of Thought)", "type": "main", "index": 0 }]]
+    },
+    "AI Classifier (Chain of Thought)": {
+      "main": [[{ "node": "Parse AI Output", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Classifier (Chain of Thought)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Parse AI Output": {
+      "main": [[{ "node": "Flatten Result", "type": "main", "index": 0 }]]
+    },
+    "Flatten Result": {
+      "main": [[{ "node": "Not spam?", "type": "main", "index": 0 }]]
+    },
+    "Not spam?": {
+      "main": [
+        [
+          { "node": "Log -> Tickets Sheet", "type": "main", "index": 0 },
+          { "node": "Slack: Notify Owner", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "YOUR_N8N_INSTANCE_ID" },
+  "tags": []
+}
