@@ -1,4 +1,4 @@
-# HUSH — AI Ticket Routing System with SLA Escalation
+# HUSH - AI Ticket Routing System with SLA Escalation
 
 Automated ticket classification, prioritization, and SLA escalation for a B2C e-commerce support team.
 
@@ -8,7 +8,7 @@ Built for HUSH, a premium bag store receiving 50-80 support tickets per day acro
 
 ## What This Does
 
-**Track 1 — Ticket Routing**
+**Track 1 - Ticket Routing**
 
 Every incoming email is automatically:
 - Classified into one of 5 categories using AI with Chain of Thought reasoning
@@ -16,7 +16,7 @@ Every incoming email is automatically:
 - Logged to Google Sheets with 15 fields including reasoning and sentiment
 - Notified to the right owner in Slack within seconds
 
-**Track 2 — SLA Watcher**
+**Track 2 - SLA Watcher**
 
 Every 5 minutes the system:
 - Checks all open tickets for SLA breach (working hours only, 09:00-22:00)
@@ -29,7 +29,7 @@ Every 5 minutes the system:
 
 | Category | Description | Priority |
 |---|---|---|
-| `product-info` | Size, material, availability questions — client deciding to buy now | P1 - 10 min |
+| `product-info` | Size, material, availability questions - client deciding to buy now | P1 - 10 min |
 | `payment-billing` | Failed payment, double charge, blocked money, refund | P1 - 10 min |
 | `complaint-legal` | Legal threat, damaged item, aggressive complaint | P2 - 30 min |
 | `order-shipping-returns` | Package tracking, returns, exchanges, delivery delays | P3 - 2 hours |
@@ -52,9 +52,9 @@ Every 5 minutes the system:
 
 SLA timers run during working hours only (09:00-22:00).
 
-- Ticket arrives at 22:30 — SLA deadline starts at 09:00 next day plus SLA minutes
-- Ticket arrives at 07:00 — SLA deadline starts at 09:00 same day plus SLA minutes
-- Ticket arrives at 14:00 — normal calculation
+- Ticket arrives at 22:30 - SLA deadline starts at 09:00 next day plus SLA minutes
+- Ticket arrives at 07:00 - SLA deadline starts at 09:00 same day plus SLA minutes
+- Ticket arrives at 14:00 - normal calculation
 
 SLA Watcher also stops entirely outside working hours. No false escalation alerts overnight.
 
@@ -76,8 +76,8 @@ SLA Watcher also stops entirely outside working hours. No false escalation alert
 
 ```
 /
-├── 01_Ticket_Routing.json      # Track 1 — Gmail trigger, AI classifier, Sheets log, Slack notify
-├── 02_SLA_Watcher.json         # Track 2 — cron trigger, breach detection, escalation chain
+├── 01_Ticket_Routing.json      # Track 1 - Gmail trigger, AI classifier, Sheets log, Slack notify
+├── 02_SLA_Watcher.json         # Track 2 - cron trigger, breach detection, escalation chain
 └── README.md
 ```
 
@@ -87,7 +87,7 @@ SLA Watcher also stops entirely outside working hours. No false escalation alert
 
 ### 1. Google Sheets
 
-Create a spreadsheet called `Customer Care — Tickets`. Rename Sheet1 to `Tickets`.
+Create a spreadsheet called `Customer Care - Tickets`. Rename Sheet1 to `Tickets`.
 
 Add these headers in row 1 in this exact order:
 
@@ -102,8 +102,8 @@ Copy the document ID from the URL and replace `YOUR_GOOGLE_SHEETS_DOC_ID` in bot
 ### 2. Slack
 
 Create two channels:
-- `#cx-tickets` — new ticket notifications
-- `#cx-escalations` — L1 escalation alerts
+- `#cx-tickets` - new ticket notifications
+- `#cx-escalations` - L1 escalation alerts
 
 Create a Slack App at https://api.slack.com/apps with these bot token scopes:
 ```
@@ -117,9 +117,9 @@ users:read
 Install the app and invite it to both channels with `/invite @your-app-name`.
 
 Replace the following placeholders in the workflow files:
-- `YOUR_CX_TICKETS_CHANNEL_ID` — right-click channel, View details, copy Channel ID (C0XXXXXXXXX)
-- `YOUR_CX_ESCALATIONS_CHANNEL_ID` — same for escalations channel
-- `YOUR_OWNER_SLACK_MEMBER_ID` — click your profile, More, Copy Member ID (U0XXXXXXXXX)
+- `YOUR_CX_TICKETS_CHANNEL_ID` - right-click channel, View details, copy Channel ID (C0XXXXXXXXX)
+- `YOUR_CX_ESCALATIONS_CHANNEL_ID` - same for escalations channel
+- `YOUR_OWNER_SLACK_MEMBER_ID` - click your profile, More, Copy Member ID (U0XXXXXXXXX)
 
 ### 3. Credentials in n8n
 
@@ -160,7 +160,7 @@ return [{ json: { output: parsed } }];
 ```
 
 **escalation_level calculation**
-Both `minutes_overdue` and `escalation_level` are computed in the same Set node. Because n8n evaluates fields in the same node simultaneously, `escalation_level` cannot reference `$json.minutes_overdue` — it must repeat the full calculation inline.
+Both `minutes_overdue` and `escalation_level` are computed in the same Set node. Because n8n evaluates fields in the same node simultaneously, `escalation_level` cannot reference `$json.minutes_overdue` - it must repeat the full calculation inline.
 
 **DateTime parsing**
 `DateTime.fromFormat()` fails on ISO strings returned by Google Sheets due to millisecond format inconsistencies. The fix uses native JavaScript: `new Date($json.sla_deadline).getTime()`.
@@ -171,11 +171,11 @@ Both `minutes_overdue` and `escalation_level` are computed in the same Set node.
 
 The classifier uses a 5-block prompt structure:
 
-1. **Role** — senior support coordinator for HUSH
-2. **Context** — 5 categories with urgency logic and business rationale
-3. **Instructions** — priority matrix P1-P4 with SLA times and owner assignments
-4. **Chain of Thought** — 3 mandatory reasoning dimensions before assigning priority: urgency signals, business impact, client context
-5. **Output format** — strict JSON with 8 fields, no markdown wrapper
+1. **Role** - senior support coordinator for HUSH
+2. **Context** - 5 categories with urgency logic and business rationale
+3. **Instructions** - priority matrix P1-P4 with SLA times and owner assignments
+4. **Chain of Thought** - 3 mandatory reasoning dimensions before assigning priority: urgency signals, business impact, client context
+5. **Output format** - strict JSON with 8 fields, no markdown wrapper
 
 Special override rules embedded in the prompt:
 - Words "court", "lawyer", "press", "attorney" always trigger complaint-legal P2
@@ -209,10 +209,10 @@ Special override rules embedded in the prompt:
 | Issue | Description | Impact |
 |---|---|---|
 | Manual ticket close | Operator must change `status` to `closed` in Sheets manually after resolving | If forgotten, ticket keeps triggering escalations every 5 min |
-| Repeat escalation alerts | No flag to track if L2 email was already sent — breach at L2 sends owner an email every 5 min until closed | Owner inbox gets flooded on long-unresolved tickets |
+| Repeat escalation alerts | No flag to track if L2 email was already sent - breach at L2 sends owner an email every 5 min until closed | Owner inbox gets flooded on long-unresolved tickets |
 | No duplicate guard | If the same email is processed twice (e.g. trigger runs twice quickly), a duplicate row is created in Sheets | Inflated ticket counts, duplicate Slack notifications |
 | Email only in prototype | Phase 1 covers Gmail only. Instagram Direct, Telegram, Facebook, and website form are not connected yet | All tickets must come via email for automation to work |
-| No retry on AI failure | If the AI Classifier or Parse AI Output node fails, the ticket is silently lost — no error notification | Tickets can be missed without the operator knowing |
+| No retry on AI failure | If the AI Classifier or Parse AI Output node fails, the ticket is silently lost - no error notification | Tickets can be missed without the operator knowing |
 
 ---
 
@@ -232,13 +232,13 @@ Special override rules embedded in the prompt:
 4. **Add error notification node**
    After Parse AI Output, add an error handler. If JSON.parse fails (AI returned malformed output), send a Slack alert with the raw email subject so the operator can handle it manually.
 
-**Phase 2 — additional channels:**
+**Phase 2 - additional channels:**
 
 5. **Instagram Direct**
    Connect via Instagram Messaging webhook. Each DM feeds into the same AI Classifier. Requires a Facebook App with instagram_manage_messages permission.
 
 6. **Telegram**
-   Connect via Telegram Bot webhook. Simple to add — one Webhook node replaces the Gmail Trigger for that channel, rest of the pipeline stays identical.
+   Connect via Telegram Bot webhook. Simple to add - one Webhook node replaces the Gmail Trigger for that channel, rest of the pipeline stays identical.
 
 7. **Facebook Business**
    Connect via Facebook Messenger webhook. Similar to Instagram setup, shares the same Facebook App.
@@ -246,7 +246,7 @@ Special override rules embedded in the prompt:
 8. **Website form**
    Connect via a webhook URL. Form submits POST request to n8n, data maps to the same ticket context fields as Gmail.
 
-**Phase 3 — analytics and reporting:**
+**Phase 3 - analytics and reporting:**
 
 9. **Weekly SLA breach report**
    Schedule a cron workflow every Monday. Reads all tickets from the past week, sends data to AI with a prompt to find patterns by category, hour, and owner. Posts a plain-language summary to Slack.
